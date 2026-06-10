@@ -1,5 +1,6 @@
-import { login } from '../api/auth.api.js';
-import { saveSession } from '../auth/session.service.js';
+import { getUsuarios } from '../api/admin.api.js';
+import { getProfile, login } from '../api/auth.api.js';
+import { saveSession, saveUser } from '../auth/session.service.js';
 import { formatApiError } from '../utils/errorMessages.js';
 
 function getDetailsMessage(details) {
@@ -50,8 +51,40 @@ function extractUser(response) {
     response?.data?.user ??
     response?.usuario ??
     response?.user ??
+    response?.data ??
+    response ??
     null
   );
+}
+
+function buildSafeUser({ correo, userFromLogin, userFromProfile, detectedRole }) {
+  const baseUser = {
+    ...(userFromLogin && typeof userFromLogin === 'object' ? userFromLogin : {}),
+    ...(userFromProfile && typeof userFromProfile === 'object' ? userFromProfile : {}),
+  };
+
+  return {
+    ...baseUser,
+    correo: baseUser.correo ?? baseUser.email ?? correo,
+    rol: detectedRole ?? baseUser.rol ?? baseUser.role ?? 'usuario',
+  };
+}
+
+async function detectRole() {
+  try {
+    await getUsuarios();
+    return 'admin';
+  } catch (error) {
+    if (error?.status === 403) {
+      return 'usuario';
+    }
+
+    if (error?.status === 401) {
+      return 'usuario';
+    }
+
+    return null;
+  }
 }
 
 export function LoginPage() {
@@ -99,10 +132,10 @@ export function mountLoginPage({ navigate } = {}) {
     try {
       setMessage(message, 'Validando credenciales...', 'muted');
 
-      const response = await login({ correo, contrasena });
+      const loginResponse = await login({ correo, contrasena });
 
-      const token = extractToken(response);
-      const user = extractUser(response);
+      const token = extractToken(loginResponse);
+      const userFromLogin = extractUser(loginResponse);
 
       if (!token) {
         setMessage(
@@ -113,7 +146,31 @@ export function mountLoginPage({ navigate } = {}) {
         return;
       }
 
-      saveSession(token, user);
+      saveSession(token, {
+        correo,
+        rol: 'usuario',
+        ...(userFromLogin && typeof userFromLogin === 'object' ? userFromLogin : {}),
+      });
+
+      let userFromProfile = null;
+
+      try {
+        const profileResponse = await getProfile();
+        userFromProfile = extractUser(profileResponse);
+      } catch {
+        userFromProfile = null;
+      }
+
+      const detectedRole = await detectRole();
+
+      const finalUser = buildSafeUser({
+        correo,
+        userFromLogin,
+        userFromProfile,
+        detectedRole,
+      });
+
+      saveUser(finalUser);
 
       setMessage(message, 'Inicio de sesión exitoso.', 'success');
 

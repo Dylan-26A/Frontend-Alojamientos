@@ -68,10 +68,16 @@ export async function request(path, options = {}) {
           data?.detail ??
           data ??
           'Ocurrió un error inesperado.',
-        details: data?.error?.details ?? data?.details ?? data?.errors ?? {},
+        details:
+          data?.error?.details ??
+          data?.details ??
+          data?.errors ??
+          {},
         data,
       },
-      'Revisa los datos enviados.',
+      response.status === 403
+        ? 'No tienes permisos para realizar esta acción.'
+        : 'Revisa los datos enviados.',
     );
   }
 
